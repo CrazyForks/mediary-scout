@@ -35,14 +35,25 @@ const CHANNELS = [
   },
 ] as const;
 
-export function PushNotificationForm({ initial }: { initial: Record<string, string> }) {
+export function PushNotificationForm({ configured }: { configured: Record<string, boolean> }) {
   const [isPending, startTransition] = useTransition();
-  const [values, setValues] = useState(initial);
+  // Saved keys are NEVER echoed back as plaintext — inputs start empty and show
+  // a masked "already saved" placeholder. The user only types to UPDATE a key.
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [savedChannels, setSavedChannels] = useState(configured);
   const [testResult, setTestResult] = useState<string | null>(null);
 
   const handleSave = () => {
     startTransition(async () => {
       const result = await savePushSettingsAction(values);
+      if (result.success) {
+        const next = { ...savedChannels };
+        for (const [key, value] of Object.entries(values)) {
+          if (value.trim()) next[key] = true;
+        }
+        setSavedChannels(next);
+        setValues({}); // re-mask: drop the just-typed plaintext from the inputs
+      }
       setTestResult(result.success ? "✅ 保存成功" : `❌ ${result.message}`);
       setTimeout(() => setTestResult(null), 3000);
     });
@@ -81,7 +92,7 @@ export function PushNotificationForm({ initial }: { initial: Record<string, stri
           <input
             type="text"
             className="push-input"
-            placeholder={channel.placeholder}
+            placeholder={savedChannels[channel.key] ? "已保存 ••••••（留空则保持不变）" : channel.placeholder}
             value={values[channel.key] ?? ""}
             onChange={(e) => setValues({ ...values, [channel.key]: e.target.value })}
             disabled={isPending}

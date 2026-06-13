@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, LoaderCircle, Check } from "lucide-react";
+import { Layers, LoaderCircle } from "lucide-react";
 import { useState, useTransition } from "react";
 import { requestSeriesAction, type RequestTrackingActionResult } from "../app/actions";
 
@@ -24,10 +24,8 @@ export function RequestSeriesButton({ candidateId }: { candidateId: string }) {
         });
       }}
     >
-      {isPending ? (
+      {isPending || isLocked ? (
         <LoaderCircle size={14} className="spin" aria-hidden />
-      ) : isLocked ? (
-        <Check size={14} aria-hidden />
       ) : (
         <Layers size={14} aria-hidden />
       )}

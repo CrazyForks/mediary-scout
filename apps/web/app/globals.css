@@ -387,11 +387,20 @@ p {
   letter-spacing: 1.4px;
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
   transition: transform 0.1s ease, background 0.15s ease;
 }
 
 .primary-button {
   transition: background 0.15s ease, transform 0.1s ease;
+}
+
+/* The search submit button must never be squeezed by the flex row — keep its
+   label ("搜索") on one line at a stable width. */
+.search-form .primary-button {
+  flex-shrink: 0;
+  min-width: 96px;
+  justify-content: center;
 }
 
 .primary-button:hover:not(:disabled) {
@@ -499,6 +508,10 @@ p {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  /* Fill the row's remaining width so the title-row spans the full card and its
+     space-between pushes the 获取 button to the right edge — even when there is
+     no overview to widen the body. */
+  flex: 1;
 }
 
 .candidate-title-row {
@@ -1013,6 +1026,10 @@ p {
 @media (max-width: 860px) {
   .app-shell {
     grid-template-columns: 1fr;
+    /* Pack rows to the top. Without this, a short page (e.g. one search result)
+       lets the grid distribute the leftover min-height:100vh space INTO the
+       rows, stretching the top nav row tall. */
+    align-content: start;
   }
 
   .sidebar {
@@ -1020,6 +1037,10 @@ p {
     height: auto;
     flex-direction: row;
     align-items: center;
+    /* Compact top bar on narrow screens — the desktop 20px column padding made
+       the horizontal nav far too tall. */
+    padding: 8px 12px;
+    gap: 12px;
   }
 
   .sidebar-footer {

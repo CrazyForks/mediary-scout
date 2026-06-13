@@ -38,7 +38,7 @@ export function SeasonRequestMenu({
   if (isLocked) {
     return (
       <span className="hub-badge tone-green" title={result?.message}>
-        <Check size={12} aria-hidden />
+        <LoaderCircle size={12} className="spin" aria-hidden />
         已请求
       </span>
     );

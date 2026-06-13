@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Film, Library, ShieldCheck } from "lucide-react";
+import { Bell, Film, Library, Settings } from "lucide-react";
 import { SearchNavLink } from "./search-memory";
 
 export function AppSidebar({
@@ -50,11 +50,11 @@ export function AppSidebar({
       <div className="sidebar-footer">
         <Link className="health-card" href="/settings" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="health-icon">
-            <ShieldCheck size={16} aria-hidden />
+            <Settings size={16} aria-hidden />
           </span>
           <span>
-            <strong>115 连接</strong>
-            <span>查看状态 / 扫码连接</span>
+            <strong>设置</strong>
+            <span>115 连接 · 推送 · 偏好</span>
           </span>
         </Link>
       </div>

@@ -97,7 +97,7 @@ export async function importForeignWorkAction(input: {
   }
   try {
     const { importForeignWorkFiles } = await import("../lib/workflow-runtime");
-    const result = await importForeignWorkFiles({
+    await importForeignWorkFiles({
       providerFileIds: input.providerFileIds,
       movieTitle,
       year,
@@ -105,7 +105,7 @@ export async function importForeignWorkAction(input: {
     revalidatePath("/notifications");
     return {
       status: "imported",
-      message: `已入库到 ${movieTitle} (${year})${result.renamedTo ? `，并重命名为 ${result.renamedTo}` : ""}。`,
+      message: `已入库到 ${movieTitle} (${year})。`,
     };
   } catch (error) {
     return { status: "failed", message: `入库失败：${String(error)}` };
@@ -166,10 +166,29 @@ export async function savePushSettingsAction(
     
     const keys = ["bark", "serverchan", "wecom", "webhook"];
     for (const key of keys) {
-      const value = settings[key]?.trim() ?? "";
-      await repository.setSetting(`push_${key}`, value);
+      const value = settings[key]?.trim();
+      // Only write channels the user actually typed into. An empty field means
+      // "leave unchanged" — the saved key stays masked and intact, never wiped.
+      if (value) {
+        await repository.setSetting(`push_${key}`, value);
+      }
     }
     
+    return { success: true };
+  } catch (error) {
+    return { success: false, message: `保存失败：${String(error)}` };
+  }
+}
+
+export async function savePreferredLanguageAction(
+  language: string,
+): Promise<PushSettingsActionResult> {
+  try {
+    const { getWorkflowRepository, PREFERRED_LANGUAGE_SETTING_KEY } = await import(
+      "../lib/workflow-runtime"
+    );
+    const repository = getWorkflowRepository();
+    await repository.setSetting(PREFERRED_LANGUAGE_SETTING_KEY, language.trim());
     return { success: true };
   } catch (error) {
     return { success: false, message: `保存失败：${String(error)}` };

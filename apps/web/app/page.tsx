@@ -107,10 +107,17 @@ async function SearchResults({ query }: { query: string }) {
               {searchView.candidates.map((candidate) => (
                 <CandidateCard
                   candidate={candidate}
-                  trackedLabel={trackedSummaryLabel(
-                    trackedByTmdbId.get(candidate.tmdbId) ?? [],
-                    candidate.seasonNumbers.length,
-                  )}
+                  trackedLabel={
+                    // The per-season summary ("第 N 季已获取/追更中") is a TV concept.
+                    // A movie has no seasons — let it fall through to its own
+                    // 已获取/已追踪 action label instead of an invented "第 1 季".
+                    candidate.mediaType === "tv"
+                      ? trackedSummaryLabel(
+                          trackedByTmdbId.get(candidate.tmdbId) ?? [],
+                          candidate.seasonNumbers.length,
+                        )
+                      : null
+                  }
                   trackedSeasonNumbers={(trackedByTmdbId.get(candidate.tmdbId) ?? []).map(
                     (state) => state.season.seasonNumber,
                   )}
@@ -235,7 +242,9 @@ function CandidateCard({
             ) : null}
           </div>
         </div>
-        <p className="candidate-overview">{candidate.overview}</p>
+        {candidate.overview ? (
+          <p className="candidate-overview">{candidate.overview}</p>
+        ) : null}
         <div className="candidate-meta">
           {isTv && candidate.seasonNumbers.length > 0 ? (
             <span>共 {candidate.seasonNumbers.length} 季</span>
@@ -465,7 +474,10 @@ function PosterCard({ entry }: { entry: LibraryWallEntry }) {
       <span className="wall-copy">
         <strong>{entry.title}</strong>
         <span>
-          {entry.year} · {entry.seasonCount} 季 · {entry.obtainedEpisodes}/{entry.totalAiredEpisodes} 集
+          {/* A movie has no seasons/episodes — show only the year. */}
+          {entry.type === "movie"
+            ? entry.year
+            : `${entry.year} · ${entry.seasonCount} 季 · ${entry.obtainedEpisodes}/${entry.totalAiredEpisodes} 集`}
         </span>
       </span>
     </Link>

@@ -8,7 +8,7 @@ import {
   FakeResourceProvider,
   FakeStorageExecutor,
   createNotifyChannelsFromEnv,
-  createXiaomiMimoAgentNodesFromEnv,
+  createAgentNodesFromEnv,
   dispatchNotifications,
   formatDailyDigestPushText,
   getTrackedSeasonStatusView,
@@ -57,7 +57,9 @@ let repository: SQLiteWorkflowRepository | null = null;
 let demoSeedPromise: Promise<void> | null = null;
 let fakeResourceProvider: ResourceProvider | null = null;
 let fakeStorageExecutor: StorageExecutor | null = null;
-let agentNodes: { adapter: "fake" | "vercel-ai"; nodes: AgentNodes } | null = null;
+let agentNodes:
+  | { adapter: "fake" | "vercel-ai"; preferredLanguage: string | undefined; nodes: AgentNodes }
+  | null = null;
 
 export function getWebDatabase(): DatabaseSync {
   if (!database) {
@@ -143,13 +145,18 @@ export async function queueCandidateTracking(candidateId: string): Promise<Candi
 export async function runNextQueuedWorkflow() {
   const repository = getWorkflowRepository();
   await hydratePan115CookieFromDb();
+  // The user's language preference is standing context baked into the agent
+  // instance (one global preference), so every workflow — movie, series, type2,
+  // anime — searches with it. No per-workflow plumbing.
+  const agents = await getAgentNodes(repository);
   const startedAt = new Date().toISOString();
   const type2 = await runQueuedType2Workflow({
     repository,
     resourceProvider: getWorkerResourceProvider(),
     storage: getWorkerStorageExecutor(),
-    agents: getAgentNodes(),
+    agents,
     storageParentDirectoryId: storageParentDirectoryId(),
+    animeStorageParentDirectoryId: animeParentDirectoryId(),
   });
   if (type2.status !== "idle") {
     await pushNotificationsSince(repository, startedAt);
@@ -159,8 +166,9 @@ export async function runNextQueuedWorkflow() {
     repository,
     resourceProvider: getWorkerResourceProvider(),
     storage: getWorkerStorageExecutor(),
-    agents: getAgentNodes(),
+    agents,
     storageParentDirectoryId: storageParentDirectoryId(),
+    animeStorageParentDirectoryId: animeParentDirectoryId(),
   });
   if (series.status !== "idle") {
     await pushNotificationsSince(repository, startedAt);
@@ -170,7 +178,7 @@ export async function runNextQueuedWorkflow() {
     repository,
     resourceProvider: getWorkerResourceProvider(),
     storage: getWorkerStorageExecutor(),
-    agents: getAgentNodes(),
+    agents,
     stagingParentDirectoryId: moviesParentDirectoryId(),
     moviesParentDirectoryId: moviesParentDirectoryId(),
   });
@@ -179,6 +187,23 @@ export async function runNextQueuedWorkflow() {
   }
   return movie;
 }
+
+/** The user's preferred subtitle language for acquisition search, or undefined
+ *  when unset / "any" (agent searches broadly). */
+export async function getPreferredLanguage(
+  repository: { getSetting(key: string): Promise<string | null> },
+): Promise<string | undefined> {
+  const value = (await repository.getSetting(PREFERRED_LANGUAGE_SETTING_KEY))?.trim();
+  // Explicit "不限" → no preference. Unset → the product default the Settings UI
+  // shows as selected ("中文（默认）"), so a fresh install actually prefers Chinese
+  // subtitles instead of silently searching broadly.
+  if (value === "any") {
+    return undefined;
+  }
+  return value || "中文";
+}
+
+export const PREFERRED_LANGUAGE_SETTING_KEY = "preferred_language";
 
 function parseMovieCandidateId(candidateId: string): number | null {
   const match = /^tmdb_movie_(\d+)$/.exec(candidateId);
@@ -334,7 +359,7 @@ export async function runScheduledType3() {
     repository,
     resourceProvider: getWorkerResourceProvider(),
     storage: getWorkerStorageExecutor(),
-    agents: getAgentNodes(),
+    agents: await getAgentNodes(repository),
     storageParentDirectoryId: storageParentDirectoryId(),
     staleActiveRunTimeoutMs: 30 * 60 * 1000,
     ...(sync ? { syncSeasonMetadata: sync } : {}),
@@ -495,15 +520,24 @@ function getWorkerStorageExecutor(): StorageExecutor {
   return fakeStorageExecutor;
 }
 
-function getAgentNodes(): AgentNodes {
+async function getAgentNodes(repository: {
+  getSetting(key: string): Promise<string | null>;
+}): Promise<AgentNodes> {
   assertWorkflowAgentAdapterPolicy(process.env);
   const adapter = process.env.MEDIA_TRACK_AGENT_ADAPTER === "vercel-ai" ? "vercel-ai" : "fake";
-  if (agentNodes?.adapter === adapter) {
+  const preferredLanguage = await getPreferredLanguage(repository);
+  // The preferred language is baked into the agent instance, so the cache is
+  // keyed by it — change the setting and the next run rebuilds with the new one.
+  if (agentNodes?.adapter === adapter && agentNodes.preferredLanguage === preferredLanguage) {
     return agentNodes.nodes;
   }
   agentNodes = {
     adapter,
-    nodes: adapter === "vercel-ai" ? createXiaomiMimoAgentNodesFromEnv(process.env) : new FakeAgentNodes(),
+    preferredLanguage,
+    nodes:
+      adapter === "vercel-ai"
+        ? createAgentNodesFromEnv(process.env, preferredLanguage)
+        : new FakeAgentNodes(),
   };
   return agentNodes.nodes;
 }
@@ -550,6 +584,15 @@ function storageParentDirectoryId(): string {
   );
 }
 
+/**
+ * Separate 115 landing parent for anime. Falls back to the TV parent when
+ * MEDIA_TRACK_ANIME_PARENT_CID is unset, so anime simply co-locates with TV
+ * until a dedicated Anime directory is configured.
+ */
+function animeParentDirectoryId(): string {
+  return process.env.MEDIA_TRACK_ANIME_PARENT_CID ?? storageParentDirectoryId();
+}
+
 function defaultQuality(): string {
   return process.env.MEDIA_TRACK_DEFAULT_QUALITY ?? "4K";
 }
@@ -587,7 +630,7 @@ export async function importForeignWorkFiles(input: {
   providerFileIds: string[];
   movieTitle: string;
   year: number;
-}): Promise<{ movieDirectoryId: string; movedFileIds: string[]; renamedTo: string | null }> {
+}): Promise<{ movieDirectoryId: string; movedFileIds: string[] }> {
   return importForeignWorkAsMovie({
     storage: getWorkerStorageExecutor(),
     providerFileIds: input.providerFileIds,

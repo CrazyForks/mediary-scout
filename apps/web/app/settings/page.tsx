@@ -1,10 +1,15 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Bell, Cable, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Bell, Cable, Languages, ShieldCheck, TriangleAlert } from "lucide-react";
 import { AppSidebar } from "../../components/app-sidebar";
 import { Pan115QrConnect } from "../../components/pan115-qr-connect";
 import { PushNotificationForm } from "../../components/push-notification-form";
-import { getPan115ConnectionStatus, getWorkflowRepository } from "../../lib/workflow-runtime";
+import { PreferredLanguageForm } from "../../components/preferred-language-form";
+import {
+  getPan115ConnectionStatus,
+  getWorkflowRepository,
+  PREFERRED_LANGUAGE_SETTING_KEY,
+} from "../../lib/workflow-runtime";
 
 export default function SettingsPage() {
   return (
@@ -21,10 +26,34 @@ export default function SettingsPage() {
           <Pan115Section />
         </Suspense>
         <Suspense fallback={<div className="skeleton skeleton-heading" />}>
+          <PreferredLanguageSection />
+        </Suspense>
+        <Suspense fallback={<div className="skeleton skeleton-heading" />}>
           <PushNotificationSection />
         </Suspense>
       </main>
     </div>
+  );
+}
+
+async function PreferredLanguageSection() {
+  await connection();
+  const repository = getWorkflowRepository();
+  const initial = (await repository.getSetting(PREFERRED_LANGUAGE_SETTING_KEY)) ?? "中文";
+
+  return (
+    <section className="panel" style={{ maxWidth: 720, marginTop: 24 }}>
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">
+            <Languages size={16} aria-hidden style={{ verticalAlign: "-2px", marginRight: 8 }} />
+            偏好语言
+          </h2>
+          <p className="panel-note">搜索资源时优先你偏好的字幕语言，避免拿到看不了的版本</p>
+        </div>
+      </div>
+      <PreferredLanguageForm initial={initial} />
+    </section>
   );
 }
 
@@ -75,12 +104,12 @@ async function PushNotificationSection() {
   await connection();
   const repository = getWorkflowRepository();
 
-  const initial: Record<string, string> = {};
+  // Only whether each channel is configured — the plaintext key is never sent
+  // to the client.
+  const configured: Record<string, boolean> = {};
   for (const key of ["bark", "serverchan", "wecom", "webhook"]) {
     const value = await repository.getSetting(`push_${key}`);
-    if (value) {
-      initial[key] = value;
-    }
+    configured[key] = Boolean(value && value.trim());
   }
 
   return (
@@ -95,7 +124,7 @@ async function PushNotificationSection() {
         </div>
       </div>
 
-      <PushNotificationForm initial={initial} />
+      <PushNotificationForm configured={configured} />
     </section>
   );
 }
