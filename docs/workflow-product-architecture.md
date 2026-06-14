@@ -527,8 +527,8 @@ The current node set (2026-06-12):
 | Node | Responsibility | Should See |
 | --- | --- | --- |
 | `AcquisitionPlanningAgent` | The whole acquisition deliberation: keyword strategy, target matching, episode mapping, selection, uncertainty | target metadata, quality preference, missing episodes, failure evidence, full snapshots via a read-only `searchResources` tool |
-| `PackageRecognitionAgent` | Map ambiguous package files to season/episode | package file tree, parser evidence |
-| `DedupAgent` (follow-up) | Map verified files to episodes semantically; keep-larger policy stays deterministic | verified 115 file list, sizes |
+| `PackageRecognitionAgent` | Map package/staging files to season/episode/residue semantics and propose scoped move/keep/delete/mark intents | complete raw package/staging/target tree, original filenames, paths, sizes, source ids, DB need state, optional non-authoritative parser hints |
+| `DedupAgent` (follow-up) | Map verified files to episodes semantically and propose scoped duplicate cleanup; size can break ties only after semantic grouping | complete raw verified file list, filenames, paths, sizes, DB obtained state, optional non-authoritative parser hints |
 | `FailureExplainAgent` (future) | Convert failure state into user-facing explanation | workflow state, attempts, missing resources |
 | `NotificationAgent` (future) | Write notification text | verified outcome, remaining missing episodes |
 
@@ -545,6 +545,27 @@ Recovery is agent-driven: when a transfer materializes nothing, the workflow
 records failure evidence and re-invokes the planning agent (bounded passes,
 default 2). Workflow code never selects candidates by hints, order, or
 pattern matching.
+
+Parser output is not an agent input substitute. If filename/folder parsing is
+used, it is an evidence annotator: it may add hints, conflicts, and confidence
+notes to each raw file item. It must not hide files from the agent, decide which
+files are relevant, move files, delete residue, deduplicate, or mark episodes
+obtained. For large package trees, the product should expose paginated sandbox
+inspection tools such as `listTree`, `readDir`, or `listFilesPage` instead of
+silently truncating the evidence window.
+
+There are two acquisition agent lines, and both inherit this contract:
+
+- Movie / Type 1 agent: select the correct work and primary video, judge
+  quality/source/remake risk, reject extras/trailers/foreign works, and propose
+  scoped movie import/cleanup/mark intents from complete raw staging evidence.
+- TV/anime agent: judge season/episode coverage, full-season or partial packs,
+  provider-ahead episodes, duplicates, residues, and propose scoped
+  season-normalization/cleanup/mark intents from complete raw staging and
+  target-season evidence.
+
+The difference is media semantics, not authority. Neither path may reduce the
+agent to a parser-backed file mover.
 
 These nodes can be implemented with any structured-output LLM tool.
 They do not require ADK as a dependency.
@@ -1932,8 +1953,8 @@ For multi-season packages, the safe product flow should be:
 ```text
 transfer into a scoped staging directory
 -> snapshot the materialized directory tree
--> parse season and episode hints from folders/files
--> give the agent the staging tree, target season handles, parser evidence, and DB need state
+-> attach non-authoritative parser/indexer hints to every raw file item
+-> give the agent the complete raw staging tree, target season handles, target directory state, hints, and DB need state
 -> agent emits scoped move/keep/delete/mark intents
 -> workflow validates those intents against the sandbox and executes them
 -> otherwise preserve staging state and surface a recoverable workflow result
@@ -2001,27 +2022,37 @@ Existing media-library tools point in the same direction:
 
 The product conclusion is not "regex can solve everything".
 
+It is also not "parser first, agent only for leftovers". That still blinds the
+agent. The agent should see the raw package evidence directly: folder names,
+file names, relative paths, sizes, types, source ids, target-directory state,
+and current DB need/obtained state. Parser output can sit beside that evidence
+as hints, but it cannot be the evidence boundary.
+
 The safer algorithm is layered:
 
 ```text
 metadata context
--> deterministic filename/folder parser
--> agent package-recognition node for ambiguous cases
--> deterministic validation and duplicate checks
--> canonical move plan
+-> complete raw package/staging/target tree
+-> optional deterministic parser/indexer hints attached to raw items
+-> agent package-recognition and normalization decision
+-> deterministic sandbox/snapshot validation
+-> canonical scoped action intents
 -> scoped executor
 -> physical verification
 ```
 
-This keeps agent intelligence in the recognition layer while preserving
-deterministic safety for every filesystem/storage mutation.
+This keeps agent intelligence in the recognition and action-decision layer
+while preserving deterministic safety for every filesystem/storage mutation.
 
 The TypeScript workflow kernel now has the first slice of this shape:
 
 - `buildPackageNormalizationPlan(...)` parses clear package trees into canonical
-  season/episode move plans.
+  season/episode move plans. This is transitional; it must not become the final
+  authority for package normalization.
 - `buildAgentAssistedPackageNormalizationPlan(...)` calls an agent recognition
-  node only when deterministic parsing is low confidence.
+  node only when deterministic parsing is low confidence. That is also
+  transitional. The target architecture is agent-first over complete raw tree
+  evidence, with parser output as hints only.
 - `AgentNodes.recognizePackage(...)` returns structured file mappings such as
   `providerFileId -> seasonNumber + episodeNumber`.
 - The planner still rejects duplicate mappings and unmapped files instead of
