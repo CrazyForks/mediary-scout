@@ -44,3 +44,4 @@ export * from "./acquisition-v2/real-storage-adapter.js";
 export * from "./acquisition-v2/orchestrator.js";
 export * from "./acquisition-v2/directory-lifecycle.js";
 export * from "./acquisition-v2/sync-need.js";
+export * from "./acquisition-v2/workflow-v2.js";
