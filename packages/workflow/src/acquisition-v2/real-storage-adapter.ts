@@ -1,0 +1,84 @@
+import type { StorageExecutor } from "../ports.js";
+import type { CandidateRegistry } from "./candidate-registry.js";
+import type { SimTreeFile, StorageV2, TransferAttemptResult } from "./storage-115-simulator.js";
+
+/**
+ * Phase 6 — the real 115 executor as a StorageV2. It maps the V2 sandbox's tool
+ * surface onto the fail-loud Storage115Executor: transfers resolve the candidate
+ * from the shared registry (the agent only ever passes ids), and the executor's
+ * own write-scope / protected-dir / risk-control guards stay in force underneath.
+ */
+const VIDEO_EXTENSIONS = /\.(mkv|mp4|avi|ts|m2ts|mov|flv|wmv)$/i;
+
+export interface RealStorageV2Options {
+  executor: StorageExecutor;
+  registry: CandidateRegistry;
+  workflowRunId: string;
+}
+
+export class RealStorageV2 implements StorageV2 {
+  private readonly executor: StorageExecutor;
+  private readonly registry: CandidateRegistry;
+  private readonly workflowRunId: string;
+
+  constructor(options: RealStorageV2Options) {
+    this.executor = options.executor;
+    this.registry = options.registry;
+    this.workflowRunId = options.workflowRunId;
+  }
+
+  async createDirectory(input: { name: string; parentId: string }): Promise<string> {
+    return this.executor.createDirectory(input);
+  }
+
+  async transferCandidate(input: {
+    candidateId: string;
+    intoDirectoryId: string;
+  }): Promise<TransferAttemptResult> {
+    const candidate = this.registry.get(input.candidateId);
+    if (!candidate) {
+      throw new Error(
+        `REAL_STORAGE_CANDIDATE_NOT_REGISTERED: ${input.candidateId} was never observed in a search this run`,
+      );
+    }
+    const attempt = await this.executor.transfer({
+      workflowRunId: this.workflowRunId,
+      directoryId: input.intoDirectoryId,
+      candidate,
+    });
+    // Only a real materialization counts as success; no_target_change (115 has no
+    // cached copy) is a miss the agent must recover from, surfaced as failed +
+    // an empty reread.
+    return {
+      status: attempt.status === "succeeded" ? "succeeded" : "failed",
+      materializedFileIds: attempt.materializedFileIds,
+    };
+  }
+
+  async listTree(input: { directoryId: string }): Promise<SimTreeFile[]> {
+    const tree = await this.executor.listTree({ directoryId: input.directoryId });
+    return tree.map((file) => ({
+      id: file.providerFileId,
+      path: file.path,
+      sizeBytes: file.sizeBytes,
+      isVideo: VIDEO_EXTENSIONS.test(file.path),
+    }));
+  }
+
+  async listSubdirectories(input: { directoryId: string }): Promise<Array<{ id: string; path: string }>> {
+    return this.executor.listSubdirectories({ directoryId: input.directoryId });
+  }
+
+  async moveFiles(input: { fileIds: string[]; targetDirectoryId: string }): Promise<{ moved: string[] }> {
+    return this.executor.moveFiles(input);
+  }
+
+  async deleteFiles(input: { directoryId: string; fileIds: string[] }): Promise<{ deleted: string[] }> {
+    return this.executor.deleteFiles(input);
+  }
+
+  async removeDirectory(input: { directoryId: string }): Promise<{ removed: string[] }> {
+    const result = await this.executor.removeDirectory(input.directoryId);
+    return { removed: result.removed ? [input.directoryId] : [] };
+  }
+}
