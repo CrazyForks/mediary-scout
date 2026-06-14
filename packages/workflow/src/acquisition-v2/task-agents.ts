@@ -22,7 +22,7 @@ const LOOP_GUIDANCE = `Your loop (you drive it; the system only orchestrates the
 1. searchResources(keyword) within budget — stop searching the moment your gathered candidates can cover the whole need. One fully-covering resource is enough; do not pile on overlapping packs.
 2. transferCandidate(snapshotId, candidateId) for ONE chosen candidate, then look at the returned materialized files — the truth of what landed, not what you predicted.
 3. inspectStaging() and classify every file: target episodes / extras (SP/NCOP/subs) / a DIFFERENT work bundled in / duplicates / unresolved.
-4. moveToSeason(fileIds) for ONLY the target files (the extract).
+4. moveToSeason(fileIds, season) for ONLY the still-missing target files, passing the season each file belongs to. A multi-season / complete-series pack is distributed by calling this once per season; episodes a season ALREADY has are NOT recopied (check inspectTargetDir(season) first).
 5. flattenPack(directoryId) to delete the now-residual wrapper directory so the scraper sees a clean flat Season — extracted media must NOT stay wrapped in its own resource directory, or scrapers read the nesting as different versions of the same episode. deleteFiles for classified residue.
 6. When overlapping ranges or a fuller pack create duplicate episodes, group by episode and keep the LARGER file, delete the smaller (Life Tree: keep-big, judge by real size, never "newer wins" / "(1) suffix wins"). deleteFiles executes your grouping.
 7. markObtained(episodes) — each episode names its backing fileId; the system rereads and refuses any whose file is not present RIGHT NOW. Only mark what exists.
@@ -47,13 +47,17 @@ function languageLine(options: TaskAgentPromptOptions): string {
 export function buildTvAnimeSystemPrompt(options: TaskAgentPromptOptions): string {
   return `${SANDBOX_BOUNDARY}
 
-You own the COMPLETE acquisition judgment for a TV/anime season in scope: keyword strategy, target matching, season/episode coverage, package recognition + normalization, provider-ahead reasoning, staging→season extraction, residue classification, same-episode dedup grouping, and marking. It is ONE deliberation, not separate filters.
+You own the COMPLETE acquisition judgment for one OR MORE seasons of a TV/anime title in scope: keyword strategy, target matching, season/episode coverage, package recognition + normalization, provider-ahead reasoning, staging→season extraction, residue classification, same-episode dedup grouping, and marking. It is ONE deliberation, not separate filters. The need is simply "应有 vs 实有 = which episodes are still missing"; it may span several seasons.
 
 Target matching:
 - A candidate must clearly refer to the target title. Reject lookalikes that only matched keyword noise. For season 1 a title without season markers may match; for season 2+ the title must explicitly indicate the tracked season.
 - Map a candidate to episodes only when its title clearly indicates them; read ranges intelligently ("1-10", "全集", "更新至13集", a bare single episode). If coverage is unclear, do not transfer "to see what is inside".
 
-Coverage: cover every missing episode with the FEWEST reliable transfers. Prefer ONE complete/full-season pack when it covers the whole need — transfer just it and stop searching. Only when no single pack covers the season, compose the fewest non-redundant ranges (e.g. 1-10, then 11-13, then a single 14) and stop once every missing episode is covered once. If the only resource covering a missing episode is a large pack, use it — never sacrifice coverage to avoid a big pack.
+Coverage: cover every missing episode with the FEWEST reliable transfers. Prefer ONE complete/full-season pack when it covers the whole need — transfer just it and stop searching. Only when no single pack covers the need, compose the fewest non-redundant ranges and stop once every missing episode is covered once. If the only resource covering a missing episode is a large pack, use it — never sacrifice coverage to avoid a big pack.
+
+Multi-season / complete-series packs: the need may span several seasons, and a SINGLE pack (e.g. "Breaking Bad Complete Series" / "全五季") may cover them all. Transfer it ONCE, then DISTRIBUTE its files into EACH season's own directory with moveToSeason(fileIds, season). Only extract episodes that are still MISSING — a season the library already has is NOT recopied (inspectTargetDir(season) shows what each season already holds; recopying already-present seasons is the 莉可丽丝 mistake across seasons). A pack covering seasons beyond the need is fine: take only what's missing, leave the rest in staging.
+
+Coverage honesty: only currently-aired, genuinely-missing episodes are obtainable. Unaired future episodes of an ongoing (latest) season are NOT missing — leave them; the daily patrol picks them up when they air. If a truly-missing episode has NO covering resource anywhere after a real search, leave that gap honestly (finish / reportNoCoverage with it still missing) — it stays for the next patrol; never fabricate coverage.
 ${languageLine(options)}
 
 ${LOOP_GUIDANCE}`;
@@ -86,7 +90,9 @@ export function needForMovie(): string[] {
 export interface TvAnimeTarget {
   title: string;
   aliases: string[];
-  seasonNumber: number;
+  /** The season number(s) this task covers — one, several, or all (multi-season pack). */
+  seasons: number[];
+  /** Missing episode codes, which MAY span the seasons above (e.g. ["S01E07","S02E13"]). */
   missingEpisodes: string[];
   qualityPreference: string;
 }
@@ -114,10 +120,12 @@ export interface RunMovieRequest extends TaskAgentPromptOptions {
 
 export async function runTvAnimeTaskAgent(request: RunTvAnimeRequest): Promise<AcquisitionAgentResult> {
   const { sandbox, model, target, maxSteps, ...promptOptions } = request;
-  const prompt = `Acquire the missing episodes for "${target.title}"${target.aliases.length ? ` (aliases: ${target.aliases.join(", ")})` : ""}, season ${target.seasonNumber}.
-Missing episodes (the coverage need): ${target.missingEpisodes.join(", ")}.
+  const seasonsLabel =
+    target.seasons.length === 1 ? `season ${target.seasons[0]}` : `seasons ${target.seasons.join(", ")}`;
+  const prompt = `Acquire the missing episodes for "${target.title}"${target.aliases.length ? ` (aliases: ${target.aliases.join(", ")})` : ""}, ${seasonsLabel}.
+Missing episodes (the coverage need — may span multiple seasons): ${target.missingEpisodes.join(", ")}.
 Quality preference: ${target.qualityPreference}.
-Start from a sensible keyword, cover every missing episode with the fewest reliable transfers, keep the season directory clean, mark what truly landed, then finish.`;
+If one pack covers multiple seasons, distribute its files into each season's directory (moveToSeason with the season) and take only still-missing episodes — never recopy a season already present. Cover every missing episode with the fewest reliable transfers, keep each season directory clean, mark what truly landed, then finish.`;
   return runAcquisitionAgent({
     sandbox,
     model,

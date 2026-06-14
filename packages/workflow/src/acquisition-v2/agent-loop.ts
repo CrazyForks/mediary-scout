@@ -41,9 +41,10 @@ export function buildSandboxToolSet(sandbox: TaskSandbox): ToolSet {
       execute: () => asEvidence(() => sandbox.inspectStagingDirs()),
     },
     inspectTargetDir: {
-      description: "Read-only: the full raw file tree currently in the scoped target (Season/movie) directory — ground truth for what has landed.",
-      inputSchema: z.object({}),
-      execute: () => asEvidence(() => sandbox.inspectTargetDir()),
+      description:
+        "Read-only ground truth for what has landed. Pass `season` to see that season's directory (so you know what it already holds before moving/deduping); omit it to see all target seasons at once. Multi-season tasks: check each season here.",
+      inputSchema: z.object({ season: z.number().int().positive().optional() }),
+      execute: (args: { season?: number }) => asEvidence(() => sandbox.inspectTargetDir(args)),
     },
     transferCandidate: {
       description:
@@ -54,15 +55,19 @@ export function buildSandboxToolSet(sandbox: TaskSandbox): ToolSet {
     },
     moveToSeason: {
       description:
-        "Move the files you selected out of staging into the scoped Season directory (the extract). Every file must currently be in this task's staging. Rereads both dirs.",
-      inputSchema: z.object({ fileIds: z.array(z.string()) }),
-      execute: (args: { fileIds: string[] }) => asEvidence(() => sandbox.moveToSeason(args)),
+        "Move the files you selected out of staging into a season's directory (the extract). For a multi-season / complete-series pack, call this ONCE PER SEASON with `season` set and only that season's files — distribute, don't dump together. Only move episodes that are still MISSING; do NOT recopy a season the library already has. `season` is required when the task spans multiple seasons. Every file must currently be in this task's staging. Rereads.",
+      inputSchema: z.object({ fileIds: z.array(z.string()), season: z.number().int().positive().optional() }),
+      execute: (args: { fileIds: string[]; season?: number }) => asEvidence(() => sandbox.moveToSeason(args)),
     },
     deleteFiles: {
       description:
-        "Delete files you confirmed (dedup keep-larger, or residue) from a named scoped directory. Every id must currently be in that directory. Rereads it.",
-      inputSchema: z.object({ directory: z.enum(["staging", "season"]), fileIds: z.array(z.string()) }),
-      execute: (args: { directory: "staging" | "season"; fileIds: string[] }) =>
+        "Delete files you confirmed (dedup keep-larger, or residue) from a named scoped directory. For directory='season' on a multi-season task, pass `season` to name which season's dir. Every id must currently be in that directory. Rereads it.",
+      inputSchema: z.object({
+        directory: z.enum(["staging", "season"]),
+        season: z.number().int().positive().optional(),
+        fileIds: z.array(z.string()),
+      }),
+      execute: (args: { directory: "staging" | "season"; season?: number; fileIds: string[] }) =>
         asEvidence(() => sandbox.deleteFiles(args)),
     },
     flattenPack: {

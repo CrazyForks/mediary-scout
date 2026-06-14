@@ -49,9 +49,9 @@ describe("runAcquisitionV2 — composition root wiring real adapters + sandbox +
       executor,
       model: searchThenReportModel(),
       workflowRunId: "run-1",
-      target: { kind: "tv", title: "Show", aliases: [], seasonNumber: 1, missingEpisodes: ["S01E01", "S01E02"], qualityPreference: "1080p" },
+      target: { kind: "tv", title: "Show", aliases: [], seasons: [1], missingEpisodes: ["S01E01", "S01E02"], qualityPreference: "1080p" },
       stagingDirectoryId: "staging",
-      targetDirectoryId: "season",
+      targetSeasonDirectoryIds: { 1: "season" },
     });
 
     // The need came from the missing episodes; nothing landed → honestly unmet.
@@ -75,7 +75,7 @@ describe("runAcquisitionV2 — composition root wiring real adapters + sandbox +
       workflowRunId: "run-2",
       target: { kind: "movie", title: "Some Film", aliases: [], year: 2025, qualityPreference: "1080p" },
       stagingDirectoryId: "staging",
-      targetDirectoryId: "movie",
+      targetMovieDirectoryId: "movie",
     });
 
     expect(result.coverage.missing).toEqual(["MOVIE"]);

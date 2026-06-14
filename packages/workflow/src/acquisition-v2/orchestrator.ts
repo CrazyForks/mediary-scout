@@ -35,8 +35,11 @@ export interface RunAcquisitionV2Request {
   target: AcquisitionV2Target;
   /** The scoped staging dir (under the show dir / storage parent — NEVER inside the Season dir). */
   stagingDirectoryId: string;
-  /** The scoped Season N dir (TV) or movie dir (movie) this task may write into. */
-  targetDirectoryId: string;
+  /** TV: season number -> scoped Season directory. A multi-season pack's files are
+   *  distributed across these; supply one entry per season the task covers. */
+  targetSeasonDirectoryIds?: Record<number, string>;
+  /** Movie: the single scoped movie directory this task may write into. */
+  targetMovieDirectoryId?: string;
   searchBudget?: number;
   maxSteps?: number;
   preferredLanguage?: string;
@@ -71,7 +74,12 @@ export async function runAcquisitionV2(request: RunAcquisitionV2Request): Promis
     provider,
     storage,
     stagingDirectoryId: request.stagingDirectoryId,
-    targetSeasonDirectoryId: request.targetDirectoryId,
+    ...(request.targetSeasonDirectoryIds === undefined
+      ? {}
+      : { targetSeasonDirectoryIds: request.targetSeasonDirectoryIds }),
+    ...(request.targetMovieDirectoryId === undefined
+      ? {}
+      : { targetMovieDirectoryId: request.targetMovieDirectoryId }),
     need,
     ...(request.searchBudget === undefined ? {} : { searchBudget: request.searchBudget }),
   });

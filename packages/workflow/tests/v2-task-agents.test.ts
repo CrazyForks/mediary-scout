@@ -86,7 +86,7 @@ describe("run wiring", () => {
     const result = await runTvAnimeTaskAgent({
       sandbox,
       model: finishImmediatelyModel(),
-      target: { title: "Show", aliases: [], seasonNumber: 1, missingEpisodes: ["S01E01"], qualityPreference: "1080p" },
+      target: { title: "Show", aliases: [], seasons: [1], missingEpisodes: ["S01E01"], qualityPreference: "1080p" },
     });
     expect(result.coverage.missing).toEqual(["S01E01"]);
   });
