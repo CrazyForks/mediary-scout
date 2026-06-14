@@ -394,6 +394,7 @@ export async function runScheduledType3(options?: { force?: boolean }): Promise<
   scheduledFor?: string;
 }> {
   const repository = getWorkflowRepository();
+  let claimedDay = false;
   if (!options?.force) {
     const target = await getDailySweepTime(repository);
     const { date, hhmm } = beijingDateTime();
@@ -405,23 +406,41 @@ export async function runScheduledType3(options?: { force?: boolean }): Promise<
       return { skipped: "before_scheduled_time", scheduledFor: target, outcomes: [] };
     }
     // Claim the day BEFORE running, so a second near-simultaneous trigger no-ops
-    // instead of launching a duplicate sweep.
+    // instead of launching a duplicate sweep. If the sweep then fails wholesale
+    // (cookie hydration, agent-node init, infra), we RELEASE the claim below so
+    // the next ping retries today rather than skipping until tomorrow.
     await repository.setSetting(LAST_SWEEP_DATE_SETTING_KEY, date);
+    claimedDay = true;
   }
-  await hydratePan115CookieFromDb();
   const startedAt = new Date().toISOString();
-  const sync = tmdbSeasonMetadataSync();
-  const result = await runScheduledType3Monitoring({
-    repository,
-    resourceProvider: getWorkerResourceProvider(),
-    storage: getWorkerStorageExecutor(),
-    agents: await getAgentNodes(repository),
-    storageParentDirectoryId: storageParentDirectoryId(),
-    staleActiveRunTimeoutMs: 30 * 60 * 1000,
-    ...(sync ? { syncSeasonMetadata: sync } : {}),
-  });
-  await pushNotificationsSince(repository, startedAt);
-  return { outcomes: result };
+  let result: Awaited<ReturnType<typeof runScheduledType3Monitoring>>;
+  try {
+    await hydratePan115CookieFromDb();
+    const sync = tmdbSeasonMetadataSync();
+    result = await runScheduledType3Monitoring({
+      repository,
+      resourceProvider: getWorkerResourceProvider(),
+      storage: getWorkerStorageExecutor(),
+      agents: await getAgentNodes(repository),
+      storageParentDirectoryId: storageParentDirectoryId(),
+      staleActiveRunTimeoutMs: 30 * 60 * 1000,
+      ...(sync ? { syncSeasonMetadata: sync } : {}),
+    });
+    await pushNotificationsSince(repository, startedAt);
+    return { outcomes: result };
+  } catch (error) {
+    // The sweep failed before completing — release today's claim so the next
+    // ping retries instead of skipping until tomorrow. Per-season failures are
+    // swallowed inside the monitor, so this only fires on infra-level errors.
+    if (claimedDay) {
+      try {
+        await repository.setSetting(LAST_SWEEP_DATE_SETTING_KEY, "");
+      } catch {
+        // best-effort release; nothing else to do
+      }
+    }
+    throw error;
+  }
 }
 
 /**
