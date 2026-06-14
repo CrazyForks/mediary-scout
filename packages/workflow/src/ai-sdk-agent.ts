@@ -1,5 +1,5 @@
 import { createOpenAICompatible, type OpenAICompatibleProviderSettings } from "@ai-sdk/openai-compatible";
-import { generateText, stepCountIs, type ToolSet } from "ai";
+import { generateText, stepCountIs, type LanguageModel, type ToolSet } from "ai";
 import { z } from "zod";
 import { AGENT_NODE_SPECS } from "./agent-node-specs.js";
 import {
@@ -359,6 +359,23 @@ export function createAgentNodesFromEnv(
     options.preferredLanguage = preferredLanguage;
   }
   return new VercelAiAgentNodes(options);
+}
+
+/**
+ * Build a bare AI SDK LanguageModel from env — for harnesses that drive their
+ * own tool-loop (the V2 sandbox agent, the §6a interrogation) rather than the
+ * structured-output nodes. Same OpenAI-compatible config as the agent nodes.
+ */
+export function createAgentModelFromEnv(env: NodeJS.ProcessEnv = process.env): LanguageModel {
+  const options: VercelAiAgentNodesOptions = {};
+  const apiKey = env.AGENT_MODEL_API_KEY ?? env.XIAOMI_MIMO_API_KEY;
+  const baseURL = env.AGENT_MODEL_BASE_URL ?? env.XIAOMI_MIMO_BASE_URL;
+  const modelId = env.AGENT_MODEL_ID ?? env.XIAOMI_MIMO_MODEL_ID;
+  if (apiKey !== undefined) options.apiKey = apiKey;
+  if (baseURL !== undefined) options.baseURL = baseURL;
+  if (modelId !== undefined) options.modelId = modelId;
+  const { providerSettings, modelId: id } = createAgentProviderConfig(options);
+  return createOpenAICompatible(providerSettings)(id);
 }
 
 export function createAgentProviderConfig(options: VercelAiAgentNodesOptions = {}): {
