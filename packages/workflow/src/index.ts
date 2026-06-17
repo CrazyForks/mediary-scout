@@ -13,6 +13,7 @@ export * from "./worker.js";
 export * from "./commands.js";
 export * from "./pansou-provider.js";
 export * from "./prowlarr-provider.js";
+export * from "./composite-provider.js";
 export * from "./resource-hints.js";
 export * from "./tmdb-provider.js";
 export * from "./storage-115-executor.js";

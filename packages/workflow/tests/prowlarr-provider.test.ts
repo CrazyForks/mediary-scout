@@ -9,7 +9,7 @@ function provider(results: unknown, calls?: { url?: string; apiKey?: string }) {
     fetchJson: async (url, init) => {
       if (calls) {
         calls.url = url;
-        calls.apiKey = init.headers["X-Api-Key"];
+        calls.apiKey = init.headers["X-Api-Key"] ?? "";
       }
       return results;
     },
