@@ -105,3 +105,54 @@ const PROFILE_RECIPES: Record<SearchProfile, string> = {
 export function getSearchRecipe(profile: SearchProfile): string {
   return `${PROFILE_RECIPES[profile]}\n\n通用铁律:\n${UNIVERSAL_LAWS}`;
 }
+
+/** Profiles where real 4K genuinely exists (research 证据 2). Everything else
+ *  tops out at 1080p — telling the agent so prevents over-searching for 4K that
+ *  isn't there (the original "机械逼 4K→过度搜索→撞限" incident). */
+const HI_REACHABLE: ReadonlySet<SearchProfile> = new Set([
+  "movie",
+  "cn-tv",
+  "us-tv",
+  "kr-tv",
+  "generic-tv",
+]);
+
+const QUALITY_KEYWORD_LAW =
+  "画质只在召回后读标题判,绝不进搜索关键词(进了会过滤掉标题匹配、还跑偏到同画质的错作品)。";
+
+/**
+ * The per-profile quality-preference guidance injected into the system prompt as
+ * a 召回后选片优先级 (NOT a search term). "" when the user has no preference
+ * (不限/undefined). The guidance always subordinates quality to coverage, and —
+ * for profiles where 4K is scarce — actively tells the agent NOT to over-search
+ * for it (1080p is the realistic ceiling there).
+ */
+export function getQualityGuidance(
+  profile: SearchProfile,
+  preference: "high" | "medium" | undefined,
+): string {
+  if (preference === undefined) {
+    return "";
+  }
+  if (preference === "medium") {
+    return (
+      "画质偏好:中(≈1080P)。召回后优先选 1080P / 蓝光(BluRay/BDRip)的版本,有 1080P 时别选 720p/枪版。" +
+      "1080P 几乎各类都有,正常都能满足。但覆盖永远优先:实在只有更低画质,也照样取下来,绝不为画质留缺。" +
+      QUALITY_KEYWORD_LAW
+    );
+  }
+  // high
+  const head =
+    "画质偏好:高(≈4K)。召回后优先选 2160p / 4K / UHD / REMUX / 蓝光原盘(带 HDR/杜比视界更佳)的版本。";
+  const tail =
+    "覆盖永远优先于画质:找不到 4K 就退取 1080P/蓝光,绝不为画质放弃任何一集/这部片。" + QUALITY_KEYWORD_LAW;
+  if (HI_REACHABLE.has(profile)) {
+    return head + "这类内容真 4K 通常存在,值得在已召回候选里挑高的。" + tail;
+  }
+  return (
+    head +
+    "但这一类真 4K 极少甚至没有,1080P/蓝光通常就是现实天花板——不要为追 4K 反复改词搜索或加搜,那只会过度消耗预算/撞限。" +
+    "已召回候选里有 4K 就取、没有就直接取最佳 1080P。" +
+    tail
+  );
+}
