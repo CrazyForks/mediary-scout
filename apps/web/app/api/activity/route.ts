@@ -1,16 +1,15 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { getActivityView } from "../../../lib/activity-view";
 import { ensureDemoSeeded, getWorkflowRepository } from "../../../lib/workflow-runtime";
 
 /**
- * Live activity feed for the /activity page. `since` (the client's last-poll time)
- * scopes 已完成 to this browser session — omitted → defaults to now, so a first
- * poll surfaces no stale completions.
+ * Live activity feed for the /activity page: the queue+running set + recent
+ * completed runs. The client session-scopes 已完成 by matching against the runIds
+ * it observed active.
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   const repository = getWorkflowRepository();
   await ensureDemoSeeded(repository);
-  const since = request.nextUrl.searchParams.get("since") ?? new Date().toISOString();
-  const view = await getActivityView({ repository, since });
+  const view = await getActivityView({ repository });
   return NextResponse.json(view);
 }

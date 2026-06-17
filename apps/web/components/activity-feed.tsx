@@ -9,20 +9,22 @@ const POLL_MS = 2600;
 const POSTER = "https://image.tmdb.org/t/p/w154";
 
 export function ActivityFeed() {
-  // since is fixed at mount → 已完成 is session-scoped (a fresh open sees none).
-  const since = useRef<string | null>(null);
-  const [view, setView] = useState<ActivityView>({ active: [], justCompleted: [] });
+  // 已完成 is session-scoped by OBSERVATION: the runIds this browser saw active.
+  // Robust to notification createdAt timing (a since-filter wrongly dropped runs
+  // the user opened the page after — createdAt ≈ run-start, not finish).
+  const seenActive = useRef<Set<string>>(new Set());
+  const [view, setView] = useState<ActivityView>({ active: [], recentCompleted: [] });
 
   useEffect(() => {
-    if (since.current === null) {
-      since.current = new Date().toISOString();
-    }
     let alive = true;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/activity?since=${encodeURIComponent(since.current!)}`, { cache: "no-store" });
+        const res = await fetch("/api/activity", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as ActivityView;
+        for (const run of data.active) {
+          seenActive.current.add(run.runId);
+        }
         if (alive) setView(data);
       } catch {
         // transient — keep the last view, retry next tick
@@ -40,6 +42,8 @@ export function ActivityFeed() {
   const queued = view.active
     .filter((run) => run.status === "queued")
     .sort((a, b) => (a.queuePosition ?? 0) - (b.queuePosition ?? 0));
+  // Only show completions for runs THIS session watched go active → done.
+  const completed = view.recentCompleted.filter((item) => seenActive.current.has(item.workflowRunId));
 
   return (
     <div className="activity">
@@ -60,11 +64,11 @@ export function ActivityFeed() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="已完成" count={view.justCompleted.length} note="仅本次浏览" defaultOpen>
-        {view.justCompleted.length === 0 ? (
+      <CollapsibleSection title="已完成" count={completed.length} note="仅本次浏览" defaultOpen>
+        {completed.length === 0 ? (
           <p className="act-empty">本次浏览还没有完成的任务，历史可在通知查看。</p>
         ) : (
-          view.justCompleted.map((item) => <CompletedRow item={item} key={item.workflowRunId} />)
+          completed.map((item) => <CompletedRow item={item} key={item.workflowRunId} />)
         )}
       </CollapsibleSection>
     </div>
@@ -112,38 +116,39 @@ function RunningRow({ run }: { run: ActivityActiveRun }) {
 }
 
 function Ticker({ text }: { text: string }) {
-  const [stack, setStack] = useState<string[]>([text]);
-  const [shift, setShift] = useState(false);
+  // Two absolutely-stacked lines: the outgoing slides up & out, the incoming slides
+  // up into place. On collapse we keep ONLY the incoming — its key is stable, so
+  // React preserves the element (no remount) and it's already at rest (translateY
+  // 0 = the is-in end state) → seamless, no "jump in from the top" flash.
+  const idRef = useRef(0);
+  const [lines, setLines] = useState<{ id: number; text: string }[]>([{ id: 0, text }]);
   const prev = useRef(text);
 
   useEffect(() => {
     if (text === prev.current) {
       return;
     }
-    const previous = prev.current;
     prev.current = text;
-    setStack([previous, text]);
-    setShift(false);
-    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setShift(true)));
-    const timer = setTimeout(() => {
-      setStack([text]);
-      setShift(false);
-    }, 360);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-    };
+    idRef.current += 1;
+    const id = idRef.current;
+    setLines((current) => {
+      const outgoing = current[current.length - 1];
+      return outgoing ? [outgoing, { id, text }] : [{ id, text }];
+    });
+    const timer = setTimeout(() => setLines([{ id, text }]), 380);
+    return () => clearTimeout(timer);
   }, [text]);
 
   return (
     <div className="act-ticker" aria-live="polite">
-      <div className="act-ticker-track" style={{ transform: shift ? "translateY(-1.45em)" : "translateY(0)" }}>
-        {stack.map((line, index) => (
-          <div className="act-ticker-line" key={`${index}-${line}`}>
-            {line}
-          </div>
-        ))}
-      </div>
+      {lines.map((line, index) => (
+        <div
+          key={line.id}
+          className={`act-ticker-line${lines.length > 1 ? (index === 0 ? " is-out" : " is-in") : ""}`}
+        >
+          {line.text}
+        </div>
+      ))}
     </div>
   );
 }

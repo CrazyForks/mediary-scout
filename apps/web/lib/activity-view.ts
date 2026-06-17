@@ -38,18 +38,19 @@ export interface ActivityCompletedItem {
 
 export interface ActivityView {
   active: ActivityActiveRun[];
-  justCompleted: ActivityCompletedItem[];
+  /** Recently-finished runs (newest first). The CLIENT scopes 已完成 to this
+   *  browser session by only showing the ones whose runId it observed active —
+   *  robust to notification createdAt timing (which ≈ run-start, not finish). */
+  recentCompleted: ActivityCompletedItem[];
 }
 
 /**
- * Assemble the activity page view. `active` is the live queue+running set;
- * `justCompleted` is runs that finished AFTER `since` — the caller passes its
- * last-poll time (a freshly opened browser passes ~now and so sees nothing), which
- * is exactly the session-scoped "已完成" semantics (history lives in 通知).
+ * Assemble the activity page view: the live queue+running set, plus the recent
+ * completed runs (the client decides which to show in 已完成 by matching against
+ * runs it watched go active → done; history lives in 通知).
  */
 export async function getActivityView(input: {
   repository: Pick<WorkflowRepository, "listActiveWorkflowRuns" | "listNotifications">;
-  since: string;
 }): Promise<ActivityView> {
   const activeRuns = await input.repository.listActiveWorkflowRuns();
 
@@ -80,15 +81,14 @@ export async function getActivityView(input: {
     };
   });
 
-  // justCompleted = notifications created after `since` (one per finished run),
-  // skipping no-op patrol checks. Reuses the report (status + landed size).
-  const notifications = await input.repository.listNotifications({ limit: 50 });
-  const justCompleted: ActivityCompletedItem[] = notifications
+  // recentCompleted = recent finished-run notifications (one per run), skipping
+  // no-op patrol checks. NO time filter — the client session-scopes by matching
+  // against the runIds it observed active (notification createdAt ≈ run-start, so
+  // a server-side since filter wrongly drops runs the user opened the page after).
+  const notifications = await input.repository.listNotifications({ limit: 30 });
+  const recentCompleted: ActivityCompletedItem[] = notifications
     .filter(
-      (notification) =>
-        notification.createdAt > input.since &&
-        notification.kind !== "already_current" &&
-        notification.report !== undefined,
+      (notification) => notification.kind !== "already_current" && notification.report !== undefined,
     )
     .map((notification) => {
       const report = notification.report!;
@@ -104,5 +104,5 @@ export async function getActivityView(input: {
       };
     });
 
-  return { active, justCompleted };
+  return { active, recentCompleted };
 }

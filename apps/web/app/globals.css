@@ -2546,17 +2546,18 @@ select.setting-control {
 }
 
 .act-ticker {
+  position: relative;
   height: 1.45em;
   overflow: hidden;
   flex: 1;
   min-width: 0;
 }
 
-.act-ticker-track {
-  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 .act-ticker-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
   height: 1.45em;
   line-height: 1.45em;
   font-size: 13px;
@@ -2564,6 +2565,24 @@ select.setting-control {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.act-ticker-line.is-in {
+  animation: act-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.act-ticker-line.is-out {
+  animation: act-slide-out 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes act-slide-in {
+  from { transform: translateY(100%); opacity: 0.3; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes act-slide-out {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-100%); opacity: 0.2; }
 }
 
 .act-pill {
@@ -2626,7 +2645,9 @@ select.setting-control {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .act-ticker-track { transition: none; }
+  .act-ticker-line.is-in,
+  .act-ticker-line.is-out { animation: none; }
+  .act-ticker-line.is-out { display: none; }
   .act-spin { animation: none; }
   .act-bar-fill { transition: none; }
 }
